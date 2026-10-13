@@ -170,7 +170,8 @@ async function loadForecast(spot: Spot): Promise<Forecast> {
       windH != null && windP != null && windD != null
         ? { heightM: windH, periodS: windP, dir: windD, source: "windsea" as const }
         : null;
-    const chosen = chooseSwell(spot.facing, primary, secondary, windsea);
+    const channel = spot.channel ? { lon: spot.lon, window: spot.channel } : null;
+    const chosen = chooseSwell(spot.facing, primary, secondary, windsea, channel);
     if (!chosen) return;
 
     const tideM = tideResult ? tideAt(tideResult.points, localClockMinutes(time)) : null;
@@ -184,6 +185,7 @@ async function loadForecast(spot: Spot): Promise<Forecast> {
       windDir: num(weatherHour.wind_direction_10m) ?? chosen.swell.dir,
       tidePosition: null,
       discount: chosen.swell.source === "windsea" ? WINDSEA_FACE_DISCOUNT : 1,
+      channel,
     });
 
     hours.push({
@@ -198,6 +200,8 @@ async function loadForecast(spot: Spot): Promise<Forecast> {
       swellSigned: evaluation.signedAngle,
       swellSource: chosen.source as SwellSource,
       faceDiscount: chosen.swell.source === "windsea" ? WINDSEA_FACE_DISCOUNT : 1,
+      channelKind: evaluation.channelKind,
+      channelTransmission: evaluation.channelTransmission,
       secondaryHeightM: secondH,
       secondaryPeriodS: secondP,
       secondaryDir: secondD,
@@ -279,6 +283,7 @@ function applyTide(hours: DerivedHour[], spot: Spot) {
         windDir: hour.windDir,
         tidePosition: position,
         discount: hour.faceDiscount,
+        channel: spot.channel ? { lon: spot.lon, window: spot.channel } : null,
       });
       hour.points = evaluation.points;
       hour.rawScore = evaluation.rawScore;
@@ -286,6 +291,9 @@ function applyTide(hours: DerivedHour[], spot: Spot) {
       hour.caps = evaluation.caps;
       hour.rating = evaluation.rating;
       hour.faceFt = evaluation.faceFt;
+      hour.channelKind = evaluation.channelKind;
+      hour.channelTransmission = evaluation.channelTransmission;
+      hour.swellAngle = evaluation.angle;
       hour.tideStage = stageFor(position);
       hour.tideTrend = trendFor(hour.tideM, next?.tideM ?? null);
     });
@@ -574,16 +582,23 @@ async function loadBuoy(spot: Spot): Promise<{ buoy: BuoyObservation | null; not
     if (parsed.ageMinutes > 360) {
       return {
         buoy: null,
-        note: `${buoy.name} (${buoy.id}) last reported ${Math.round(parsed.ageMinutes / 60)} hours ago, so it isn't treated as live.`,
+        note: joinNote(
+          `${buoy.name} (${buoy.id}) last reported ${Math.round(parsed.ageMinutes / 60)} hours ago, so it isn't treated as live.`,
+          spot.buoyNote,
+        ),
       };
     }
     return {
       buoy: { ...parsed, id: buoy.id, name: buoy.name },
-      note: null,
+      note: spot.buoyNote ?? null,
     };
   } catch {
-    return { buoy: null, note: `${buoy.name} (${buoy.id}) didn't respond.` };
+    return { buoy: null, note: joinNote(`${buoy.name} (${buoy.id}) didn't respond.`, spot.buoyNote) };
   }
+}
+
+function joinNote(note: string, extra?: string): string {
+  return extra ? `${note} ${extra}` : note;
 }
 
 function defaultBuoyNote(spot: Spot): string | null {
@@ -604,9 +619,22 @@ function defaultTideNote(spot: Spot): string {
 function parseBuoy(text: string): Omit<BuoyObservation, "id" | "name"> | null {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const headerLine = lines.find((line) => line.startsWith("#YY"));
-  const dataLine = lines.find((line) => !line.startsWith("#"));
-  if (!headerLine || !dataLine) return null;
+  const dataLines = lines.filter((line) => !line.startsWith("#"));
+  if (!headerLine || !dataLines.length) return null;
   const headers = headerLine.replace(/^#/, "").trim().split(/\s+/);
+  const parsed = dataLines
+    .map((line) => parseBuoyRow(headers, line))
+    .filter((row): row is Omit<BuoyObservation, "id" | "name"> => row != null);
+  if (!parsed.length) return null;
+  // Some stations alternate wave reports with wind-only rows. Prefer a fresh wave row.
+  const withWaves = parsed.find((row) => row.waveHeightM != null && row.ageMinutes <= 360);
+  return withWaves ?? parsed[0];
+}
+
+function parseBuoyRow(
+  headers: string[],
+  dataLine: string,
+): Omit<BuoyObservation, "id" | "name"> | null {
   const cols = dataLine.split(/\s+/);
   const read = (name: string) => {
     const index = headers.indexOf(name);

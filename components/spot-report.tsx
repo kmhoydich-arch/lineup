@@ -165,6 +165,7 @@ export function SpotReport({ spot, forecast }: { spot: Spot; forecast: Forecast 
               </p>
               {forecast.buoy.waterTempC != null ? <p>Water {formatTemp(forecast.buoy.waterTempC, units)}.</p> : null}
               {comparison ? <p className="text-muted-foreground">{comparison}</p> : null}
+              {forecast.buoyNote ? <p className="text-muted-foreground">{forecast.buoyNote}</p> : null}
             </div>
           ) : (
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{forecast.buoyNote}</p>

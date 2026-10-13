@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 4317 -H 0.0.0.0",
     "lint": "eslint",
-    "test": "tsx --test lib/rating.test.ts"
+    "test": "tsx --test lib/*.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

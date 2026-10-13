@@ -112,6 +112,7 @@ export function buildSummary(spot: Spot, hour: DerivedHour, units: Units): strin
     return [
       `${spot.name} is too small to surf right now.`,
       `The best energy is about ${formatFacePrecise(hour.faceFt, units)} from the ${dir} at ${period}s.`,
+      channelSentence(hour),
       wind,
       tide,
       sky,
@@ -121,10 +122,13 @@ export function buildSummary(spot: Spot, hour: DerivedHour, units: Units): strin
   }
 
   let lead: string;
+  const shadowed = hour.channelKind === "wrap" || hour.channelKind === "mixed" || hour.channelKind === "blocked";
   if (hour.swellSource === "windsea") {
     lead = `It's mostly local windsea, ${sizeWords(hour.faceFt)}, around ${period} seconds out of the ${dir}. That kind of chop rarely lines up.`;
   } else if (hour.swellSource === "secondary") {
-    lead = `${capitalize(sizeWords(hour.faceFt))} secondary swell from the ${dir} at ${period} seconds is the one lined up with this beach. The other swell is aimed worse, so the rating uses this one.`;
+    lead = `${capitalize(sizeWords(hour.faceFt))} secondary swell from the ${dir} at ${period} seconds is the one that arrives best on this beach. The other swell is aimed worse, so the rating uses this one.`;
+  } else if (shadowed) {
+    lead = `${capitalize(sizeWords(hour.faceFt))} ${dir} swell at ${period} seconds, measured offshore.`;
   } else if (hour.swellAngle <= 20) {
     lead = `${capitalize(sizeWords(hour.faceFt))} ${dir} swell at ${period} seconds, aimed nearly straight in.`;
   } else {
@@ -132,7 +136,22 @@ export function buildSummary(spot: Spot, hour: DerivedHour, units: Units): strin
     lead = `${capitalize(sizeWords(hour.faceFt))} ${dir} swell at ${period} seconds, about ${Math.round(hour.swellAngle)}° off straight in from ${side} as you look out to sea.`;
   }
 
-  return [lead, wind, tide, verdict(hour.rating, hour.faceFt), sky].filter(Boolean).join(" ");
+  return [lead, channelSentence(hour), wind, tide, verdict(hour.rating, hour.faceFt), sky].filter(Boolean).join(" ");
+}
+
+function channelSentence(hour: DerivedHour): string | null {
+  if (!hour.channelKind || hour.channelTransmission == null) return null;
+  const pct = Math.max(1, Math.round(hour.channelTransmission * 100));
+  if (hour.channelKind === "south") {
+    return "South swell runs up the Santa Barbara Channel between the islands and the mainland, so this direction is not shadowed the way a west swell is.";
+  }
+  if (hour.channelKind === "wrap") {
+    return `West-northwest swell has to wrap around Point Conception. About ${pct}% of the offshore height is counted, and a longer period bends it toward the beach.`;
+  }
+  if (hour.channelKind === "mixed") {
+    return `Southwest swell only partly clears the Channel Islands. About ${pct}% of the offshore height is counted.`;
+  }
+  return `This direction is blocked by the Channel Islands and the bend at Point Conception. About ${pct}% of the offshore height is counted.`;
 }
 
 export function windowBlurb(hour: DerivedHour): string {

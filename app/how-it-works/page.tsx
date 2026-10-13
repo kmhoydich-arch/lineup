@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { channelArrival, CHANNEL_WRAP_PEAK } from "@/lib/channel";
 import { evaluateConditions } from "@/lib/rating";
 import {
   DIRECTION_POINTS,
@@ -30,6 +31,42 @@ const example = evaluateConditions({
   windDir: 80,
   tidePosition: 0.48,
 });
+
+const campusChannel = { lon: -119.8438, window: { westWrap: 0.72, south: 0.7 } };
+const campusWrap = evaluateConditions({
+  beachFacing: 200,
+  breakType: "point",
+  swellHeightM: 2,
+  swellPeriodS: 16,
+  swellDir: 290,
+  windSpeedMs: 3,
+  windDir: 10,
+  tidePosition: 0.55,
+  channel: campusChannel,
+});
+const campusSouth = evaluateConditions({
+  beachFacing: 200,
+  breakType: "point",
+  swellHeightM: 1.1,
+  swellPeriodS: 14,
+  swellDir: 180,
+  windSpeedMs: 3,
+  windDir: 10,
+  tidePosition: 0.55,
+  channel: campusChannel,
+});
+const campusShort = evaluateConditions({
+  beachFacing: 200,
+  breakType: "point",
+  swellHeightM: 2,
+  swellPeriodS: 9,
+  swellDir: 280,
+  windSpeedMs: 3,
+  windDir: 10,
+  tidePosition: 0.55,
+  channel: campusChannel,
+});
+const wrapArrival = channelArrival(campusChannel.lon, 200, 290, 16, campusChannel.window);
 
 export default function HowItWorksPage() {
   return (
@@ -117,6 +154,7 @@ export default function HowItWorksPage() {
           <li>More than 110° off the beach: score capped at 41.</li>
           <li>More than 80° off the beach: score capped at 55.</li>
           <li>Period under 7 seconds: score capped at 61, so it cannot read Good or Epic.</li>
+          <li>Face under 2 ft: score capped at 61. Ankle-high surf stays Fair even when the wind is clean and the period is long.</li>
           <li>Face under 3 ft and period under 10 seconds: score capped at 61. Clean knee-high windswell stays Fair.</li>
           <li>Onshore or cross-onshore faster than 18 mph: score capped at 41.</li>
           <li>Face height under 1 ft: the word is Poor even if the wind is perfect. The points still show.</li>
@@ -149,6 +187,59 @@ export default function HowItWorksPage() {
         <p>Change any input and the same function runs on every hour of every break.</p>
       </Section>
 
+      <Section title="The Santa Barbara Channel">
+        <p>
+          From Point Conception to Ventura the coast faces south, and the Channel Islands sit upwind of a west or northwest swell. A straight west swell does not hit Isla Vista the way it hits a west-facing beach in San Francisco. Two kinds of swell do the work here.
+        </p>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>South swell, roughly 145° to 205°, runs up the channel between the islands and the mainland. Spots that face south, especially Hammond&apos;s, Sands, Depressions, and Leadbetter, keep most of that height.</li>
+          <li>West to northwest swell, roughly 255° to 325°, has to wrap around Point Conception. Longer period refracts into the channel. Short period mostly dies on the islands. The classic winter angle is about {CHANNEL_WRAP_PEAK}°.</li>
+          <li>Anything north of that, or from the east, is blocked by the mainland itself. Almost none of it is counted.</li>
+        </ul>
+        <p>
+          Each channel break has two numbers from 0 to 1. West wrap is how well that spot focuses a Conception wrap. Rincon and El Capitan are high. Goleta Beach is low. South is how open the spot is to swell coming up the channel. Depth is not a separate setting: it comes from longitude, so Refugio, close to Conception, keeps more wrapped west energy than Ventura.
+        </p>
+        <p>For a wrap, the height multiplier is:</p>
+        <pre className="overflow-x-auto rounded-2xl bg-ink p-4 text-sm leading-6 text-[#f6f0e4]">
+          {`transmission = west wrap × period × angle quality × (0.90 − 0.45 × depth)`}
+        </pre>
+        <p>
+          Period runs from 0.32 at 8 seconds to 1 at 16 seconds and up. Angle quality is 1 at {CHANNEL_WRAP_PEAK}° and falls off over the next 45°. Depth is 0 at Point Conception and 1 at Ventura. The local arrival is then bent toward the beach facing, more so when the period is long, and the ordinary exposure table uses that bent direction. The page still names the offshore direction, and it says what percent of the offshore height was counted.
+        </p>
+        <p>
+          Campus Point, facing 200°, west wrap 0.72, south 0.70. Same north wind and a mid tide in all three rows. The numbers come from the same function the forecast uses.
+        </p>
+        <Table
+          headers={["Offshore swell", "Counted", "Face", "Word"]}
+          rows={[
+            [
+              "2.0 m from 290° at 16s",
+              `${Math.round((campusWrap.channelTransmission ?? 0) * 100)}%`,
+              `${campusWrap.faceFt.toFixed(1)} ft`,
+              campusWrap.rating,
+            ],
+            [
+              "1.1 m from 180° at 14s",
+              `${Math.round((campusSouth.channelTransmission ?? 0) * 100)}%`,
+              `${campusSouth.faceFt.toFixed(1)} ft`,
+              campusSouth.rating,
+            ],
+            [
+              "2.0 m from 280° at 9s",
+              `${Math.round((campusShort.channelTransmission ?? 0) * 100)}%`,
+              `${campusShort.faceFt.toFixed(1)} ft`,
+              campusShort.rating,
+            ],
+          ]}
+        />
+        <p>
+          The 16 second wrap is bent to about {Math.round(wrapArrival.localDir)}° before the angle score. The 9 second swell is almost the same height offshore and much smaller on the beach, because it does not have the period to make the bend. If that leftover is still under about 22% of the offshore height, the score is capped at Fair.
+        </p>
+        <p>
+          This is a coast-wide model, not a survey of every reef. It will miss a section that loves a slightly different angle. It does not apply outside this channel.
+        </p>
+      </Section>
+
       <Section title="Best time of day">
         <p>
           For each local day, daylight hours are walked in three-hour blocks. The block with the highest average score is the highlighted window. If nothing is actually good, the page still shows the least-bad block and says so. Sunrise and sunset come from the Open-Meteo weather response.
@@ -174,20 +265,20 @@ export default function HowItWorksPage() {
             <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://www.ndbc.noaa.gov/">
               NOAA NDBC realtime buoy files
             </a>
-            . <code>https://www.ndbc.noaa.gov/data/realtime2/&lt;station&gt;.txt</code>. On that check, station 46237 (San Francisco Bar) reported about 1.5 m at 15 seconds, and 51201 (Waimea Bay) was reporting as well. Observations older than 6 hours are not shown as live. There is no NDBC coverage for the international breaks.
+            . <code>https://www.ndbc.noaa.gov/data/realtime2/&lt;station&gt;.txt</code>. On that check, station 46237 (San Francisco Bar) reported about 1.5 m at 15 seconds, and 51201 (Waimea Bay) was reporting as well. For the Santa Barbara Channel, East Santa Barbara buoy 46053 is the closest, about 12 miles south of Campus Point, but its wave height has been missing since October 6, 2026. West Santa Barbara 46054, off Point Conception, was reporting about 1.8 m at 16 seconds from 264 degrees that same evening, so the channel breaks use 46054. Observations older than 6 hours are not shown as live. There is no NDBC coverage for the international breaks.
           </li>
           <li>
             <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://api.tidesandcurrents.noaa.gov/api/prod/">
               NOAA CO-OPS Data API
             </a>
-            . Hourly tide predictions, datum MLLW, metric, local time. Station 9414290 (San Francisco) returned a full prediction series. Some nearby harbors are subordinate stations. For those, Lineup shifts the reference station by the average of the NOAA high and low time offsets and scales height by the average ratio. The station name on the page says when that happens.
+            . Hourly tide predictions, datum MLLW, metric, local time. Station 9414290 (San Francisco) returned a full prediction series. Santa Barbara 9411340 and Ventura 9411270 both returned hourly predictions on October 13, 2026, and those are the gauges for the channel breaks. Some nearby harbors are subordinate stations. For those, Lineup shifts the reference station by the average of the NOAA high and low time offsets and scales height by the average ratio. The station name on the page says when that happens.
           </li>
         </ul>
       </Section>
 
       <Section title="What this will get wrong">
         <ul className="list-disc space-y-2 pl-5">
-          <li>Nearshore bathymetry, sandbars, and shadowing from points and islands are not in the model. A west swell that looks square on the compass can still be blocked.</li>
+          <li>The Channel Islands shadow is modeled only from Point Conception to Ventura. Other islands, points, and sandbars are not. A west swell that looks square on the compass can still be blocked somewhere else.</li>
           <li>The marine grid is coarse. The offshore nudge helps, and it is still a model cell, not the lineup.</li>
           <li>Buoys measure offshore waves. They are shown beside the forecast, not swapped in as the surf height.</li>
           <li>Tide preference is a break-type habit. Your spot may want the opposite.</li>

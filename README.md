@@ -2,7 +2,7 @@
 
 A free surf forecast and report. No account, no paywall, no ads.
 
-Lineup covers 39 breaks in California, Hawaii, the US East Coast, and a few coasts abroad. Each break has a plain-language read of the conditions right now, a 100-point score with the math showing, and more than a week of hourly swell, wind, and tide.
+Lineup covers breaks in the Santa Barbara Channel around Isla Vista, plus California, Hawaii, the US East Coast, and a few coasts abroad. The home page opens on the channel. Each break has a plain-language read of the conditions right now, a 100-point score with the math showing, and more than a week of hourly swell, wind, and tide.
 
 ## Run it
 
@@ -58,11 +58,13 @@ The score is 100 points:
 | Period | 20 | Longer period scores higher |
 | Tide | 10 | A general preference for the break type (beach, point, or reef), neutral when there is no station |
 
-Caps keep one good ingredient from hiding a bad one: swell aimed away from the beach, period under 7 seconds, strong onshore wind, and small short-period surf. Under 1 ft of face is always Poor.
+Caps keep one good ingredient from hiding a bad one: swell aimed away from the beach, period under 7 seconds, strong onshore wind, small short-period surf, and anything under 2 ft. Under 1 ft of face is always Poor.
 
 Epic is 82+, Good is 64+, Fair is 44+, and anything lower is Poor. Full tables are in the app.
 
 Beach facing is the compass direction the beach looks toward open water. These are estimates, not a survey of every peak.
+
+Breaks from Refugio to C Street also multiply that face by a channel transmission. West and northwest swell is shadowed by the Channel Islands and has to wrap around Point Conception, so a longer period counts for more, and spots farther east keep less of it. South swell runs up the channel and is not shadowed the same way. The home view defaults to that coast. The full formula is on `/how-it-works`.
 
 ## Data sources
 
@@ -72,7 +74,7 @@ All of these are free and keyless. They were called successfully on October 13, 
 | --- | --- | --- |
 | [Open-Meteo Marine](https://open-meteo.com/en/docs/marine-weather-api) | Swell height, period, direction, secondary swell, wind waves, sea temperature | 8-day hourly. The request is nudged offshore along the beach facing so the grid cell is over water. |
 | [Open-Meteo Forecast](https://open-meteo.com/en/docs) | Wind, gusts, air temperature, weather, sunrise, sunset | Wind is requested in m/s. |
-| [NOAA NDBC](https://www.ndbc.noaa.gov/) realtime2 files | Live buoy wave height, period, direction, water temperature | `https://www.ndbc.noaa.gov/data/realtime2/<id>.txt`. Readings older than 6 hours are not shown as live. |
+| [NOAA NDBC](https://www.ndbc.noaa.gov/) realtime2 files | Live buoy wave height, period, direction, water temperature | `https://www.ndbc.noaa.gov/data/realtime2/<id>.txt`. Readings older than 6 hours are not shown as live. Channel breaks use West Santa Barbara 46054. East Santa Barbara 46053 is closer to Isla Vista, but its wave height has been missing since October 6, 2026. |
 | [NOAA CO-OPS](https://api.tidesandcurrents.noaa.gov/api/prod/) | Hourly tide predictions, datum MLLW | Subordinate stations are shifted from their reference station using NOAA high/low offsets. |
 
 International breaks have swell and wind only. NOAA buoys and tides do not cover them, and the page says so instead of inventing a tide.
@@ -85,4 +87,4 @@ A server process keeps a forecast for about 20 minutes, then fetches again. The 
 
 ## Limits
 
-The marine grid does not know the sandbar, the point, or the island shadow. A buoy measures offshore waves, not the face in the lineup. Tide preference is a break-type habit. A high score on a huge day is not a recommendation to paddle out.
+The marine grid does not know the sandbar. The Channel Islands shadow is modeled from Point Conception to Ventura, and it is still a coast-wide estimate, not every reef. A buoy outside the channel reads larger than the beach. Tide preference is a break-type habit. A high score on a huge day is not a recommendation to paddle out.

@@ -1,6 +1,21 @@
 export type BreakType = "beach" | "point" | "reef";
 
-export type Coast = "California" | "Hawaii" | "East Coast" | "International";
+export type Coast =
+  | "Santa Barbara / Isla Vista"
+  | "California"
+  | "Hawaii"
+  | "East Coast"
+  | "International";
+
+/** How a Santa Barbara Channel break receives swell after the islands. */
+export type ChannelWindow = {
+  /** 0–1. How well this break focuses west-northwest swell that wraps at Point Conception. */
+  westWrap: number;
+  /** 0–1. How open this break is to south swell traveling up the channel. */
+  south: number;
+};
+
+export type ChannelKind = "south" | "wrap" | "mixed" | "blocked";
 
 export type Rating = "poor" | "fair" | "good" | "epic";
 
@@ -42,7 +57,11 @@ export type Spot = {
   breakType: BreakType;
   timezone: string;
   buoy?: { id: string; name: string };
+  /** Shown with the buoy reading. Used when the nearest station is not the one with live waves. */
+  buoyNote?: string;
   tide?: TideLink;
+  /** Set for breaks inside the Santa Barbara Channel. */
+  channel?: ChannelWindow;
   blurb: string;
 };
 
@@ -69,6 +88,9 @@ export type DerivedHour = {
   swellSigned: number;
   swellSource: SwellSource;
   faceDiscount: number;
+  channelKind: ChannelKind | null;
+  /** Share of the offshore swell height that reaches this break. 1 outside the channel. */
+  channelTransmission: number | null;
   secondaryHeightM: number | null;
   secondaryPeriodS: number | null;
   secondaryDir: number | null;

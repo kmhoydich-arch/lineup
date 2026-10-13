@@ -1,5 +1,6 @@
+import { channelArrival } from "@/lib/channel";
 import { angleDiff, signedFromFacing } from "@/lib/geo";
-import type { BreakType, Rating, ScorePoints, WindKind } from "@/lib/types";
+import type { BreakType, ChannelKind, ChannelWindow, Rating, ScorePoints, WindKind } from "@/lib/types";
 
 export const METERS_TO_FEET = 3.28084;
 export const MS_TO_MPH = 2.236936;
@@ -89,6 +90,10 @@ export type Evaluation = {
   score: number;
   caps: string[];
   rating: Rating;
+  channelKind: ChannelKind | null;
+  channelTransmission: number | null;
+  /** Direction used for the angle score. Inside the channel this is the wrapped arrival, not the offshore direction. */
+  arrivalDir: number;
 };
 
 export function periodFactor(periodS: number): number {
@@ -116,9 +121,10 @@ export function faceFeet(
   periodS: number,
   angle: number,
   discount = 1,
+  transmission = 1,
 ): number {
   if (heightM <= 0 || periodS <= 0) return 0;
-  return heightM * METERS_TO_FEET * periodFactor(periodS) * exposureFactor(angle) * discount;
+  return heightM * METERS_TO_FEET * periodFactor(periodS) * exposureFactor(angle) * discount * transmission;
 }
 
 export function classifyWind(
@@ -165,16 +171,21 @@ export function ratingFor(score: number, faceFt: number): Rating {
   return "poor";
 }
 
+export type ChannelInput = { lon: number; window: ChannelWindow };
+
 export function chooseSwell(
   beachFacing: number,
   primary: SwellCandidate | null,
   secondary: SwellCandidate | null,
   windsea: SwellCandidate | null,
+  channel?: ChannelInput | null,
 ): {
   swell: SwellCandidate;
   faceFt: number;
   angle: number;
   source: SwellCandidate["source"] | "flat";
+  channelKind: ChannelKind | null;
+  channelTransmission: number | null;
 } | null {
   const usable: { swell: SwellCandidate; discount: number }[] = [];
   for (const swell of [primary, secondary]) {
@@ -200,13 +211,26 @@ export function chooseSwell(
   let best = usable[0];
   let bestFace = -1;
   let bestAngle = 0;
+  let bestKind: ChannelKind | null = null;
+  let bestTransmission: number | null = null;
   for (const option of usable) {
-    const angle = angleDiff(option.swell.dir, beachFacing);
-    const face = faceFeet(option.swell.heightM, option.swell.periodS, angle, option.discount);
+    const shadow = channel
+      ? channelArrival(channel.lon, beachFacing, option.swell.dir, option.swell.periodS, channel.window)
+      : null;
+    const angle = angleDiff(shadow?.localDir ?? option.swell.dir, beachFacing);
+    const face = faceFeet(
+      option.swell.heightM,
+      option.swell.periodS,
+      angle,
+      option.discount,
+      shadow?.transmission ?? 1,
+    );
     if (face > bestFace) {
       best = option;
       bestFace = face;
       bestAngle = angle;
+      bestKind = shadow?.kind ?? null;
+      bestTransmission = shadow?.transmission ?? null;
     }
   }
 
@@ -215,6 +239,8 @@ export function chooseSwell(
     faceFt: Math.max(0, bestFace),
     angle: bestAngle,
     source: bestFace < 1 ? "flat" : best.swell.source,
+    channelKind: bestKind,
+    channelTransmission: bestTransmission,
   };
 }
 
@@ -228,9 +254,14 @@ export function evaluateConditions(input: {
   windDir: number;
   tidePosition: number | null;
   discount?: number;
+  channel?: ChannelInput | null;
 }): Evaluation {
-  const angle = angleDiff(input.swellDir, input.beachFacing);
-  const signedAngle = signedFromFacing(input.swellDir, input.beachFacing);
+  const shadow = input.channel
+    ? channelArrival(input.channel.lon, input.beachFacing, input.swellDir, input.swellPeriodS, input.channel.window)
+    : null;
+  const arrivalDir = shadow?.localDir ?? input.swellDir;
+  const angle = angleDiff(arrivalDir, input.beachFacing);
+  const signedAngle = signedFromFacing(arrivalDir, input.beachFacing);
   const windMph = Math.max(0, input.windSpeedMs * MS_TO_MPH);
   const windType = classifyWind(input.windDir, input.beachFacing, windMph);
   const points: ScorePoints = {
@@ -269,9 +300,19 @@ export function evaluateConditions(input: {
     input.swellPeriodS,
     angle,
     input.discount ?? 1,
+    shadow?.transmission ?? 1,
   );
 
-  if (faceFt < 3 && input.swellPeriodS < 10) {
+  if (shadow && shadow.kind !== "south" && shadow.transmission < 0.22) {
+    applyCap(
+      55,
+      "The Channel Islands and Point Conception block most of this swell, so the score is capped at Fair.",
+    );
+  }
+
+  if (faceFt < 2) {
+    applyCap(61, "Under 2 ft of face is capped at Fair. There is not enough size to call it good.");
+  } else if (faceFt < 3 && input.swellPeriodS < 10) {
     applyCap(61, "Small, short-period surf is capped at Fair. There is not enough size and period to call it good.");
   }
 
@@ -290,5 +331,8 @@ export function evaluateConditions(input: {
     score,
     caps,
     rating: ratingFor(score, faceFt),
+    channelKind: shadow?.kind ?? null,
+    channelTransmission: shadow?.transmission ?? null,
+    arrivalDir,
   };
 }

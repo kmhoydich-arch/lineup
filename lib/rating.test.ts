@@ -111,6 +111,23 @@ describe("ratings", () => {
     assert.equal(result.rating, "fair");
   });
 
+  it("keeps a clean but small long-period swell at fair", () => {
+    const result = evaluateConditions({
+      beachFacing: 200,
+      breakType: "point",
+      swellHeightM: 0.45,
+      swellPeriodS: 14,
+      swellDir: 200,
+      windSpeedMs: 2,
+      windDir: 20,
+      tidePosition: 0.55,
+    });
+    assert.ok(result.faceFt < 2);
+    assert.ok(result.faceFt >= 1);
+    assert.ok(result.score <= 61);
+    assert.equal(result.rating, "fair");
+  });
+
   it("keeps a clean but tiny swell at poor", () => {
     const result = evaluateConditions({
       beachFacing: 270,

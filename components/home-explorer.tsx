@@ -19,7 +19,7 @@ type CardState = {
 export function HomeExplorer() {
   const favorites = useFavorites();
   const [query, setQuery] = useState("");
-  const [coast, setCoast] = useState<Coast | "All">("All");
+  const [coast, setCoast] = useState<Coast | "All">("Santa Barbara / Isla Vista");
   const [cards, setCards] = useState<Record<string, CardState>>(() =>
     Object.fromEntries(SPOTS.map((spot) => [spot.id, { status: "loading" as const }])),
   );
@@ -86,8 +86,8 @@ export function HomeExplorer() {
     });
   }, [coast, query]);
 
-  const readyCount = Object.values(cards).filter((card) => card.status === "ready").length;
-  const errorCount = Object.values(cards).filter((card) => card.status === "error").length;
+  const readyCount = filtered.filter((spot) => cards[spot.id]?.status === "ready").length;
+  const errorCount = filtered.filter((spot) => cards[spot.id]?.status === "error").length;
   const starred = filtered.filter((spot) => favorites.ids.includes(spot.id));
 
   return (
@@ -97,7 +97,7 @@ export function HomeExplorer() {
         The whole forecast, in plain language.
       </h1>
       <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-        {SPOTS.length} breaks across California, Hawaii, the East Coast, and a few coasts abroad. Every hour of the next week stays visible, and the rating shows its math.
+        {SPOTS.length} breaks. This view starts on the Santa Barbara Channel, around Isla Vista, where west swell has to wrap the islands. California, Hawaii, the East Coast, and a few coasts abroad are one tap away.
       </p>
 
       <div className="mt-6 grid gap-3">
@@ -107,7 +107,7 @@ export function HomeExplorer() {
             id="spot-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Try Pipeline, Santa Cruz, or Portugal"
+            placeholder="Try Campus Point, Sands, or Rincon"
             className="h-11 bg-card text-base"
           />
         </label>
@@ -127,7 +127,7 @@ export function HomeExplorer() {
           ))}
         </div>
         <p className="text-sm text-muted-foreground" aria-live="polite">
-          {readyCount} of {SPOTS.length} breaks have live conditions
+          {readyCount} of {filtered.length} breaks in this view have live conditions
           {errorCount ? ` · ${errorCount} didn't load` : ""}. Stars stay on this phone.
         </p>
         {errorCount > 0 ? (
