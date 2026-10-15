@@ -1,3 +1,43 @@
+/** Spot-local clock for an instant, including minutes: `YYYY-MM-DDTHH:mm`. */
+export function localStamp(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  let hour = get("hour");
+  if (hour === "24") hour = "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${hour.padStart(2, "0")}:${get("minute").padStart(2, "0")}`;
+}
+
+/** Convert a spot-local clock stamp to a real UTC instant. */
+export function zonedStampToUtc(stamp: string, timeZone: string): Date | null {
+  const match = stamp.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!match) return null;
+  let utc = Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+  );
+  const intended = localClockMinutes(stamp);
+  if (Number.isNaN(intended)) return null;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const shown = localClockMinutes(localStamp(new Date(utc), timeZone));
+    const delta = intended - shown;
+    if (delta === 0) return new Date(utc);
+    utc += delta * 60000;
+  }
+  return new Date(utc);
+}
+
 export function localHourKey(date: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,

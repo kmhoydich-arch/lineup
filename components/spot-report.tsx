@@ -9,8 +9,10 @@ import { ConditionCompass } from "@/components/condition-compass";
 import { ForecastCharts } from "@/components/forecast-charts";
 import { HourlyTable } from "@/components/hourly-table";
 import { RatingBadge } from "@/components/rating-badge";
+import { SessionLog } from "@/components/session-log";
 import { useUnits } from "@/components/providers";
 import {
+  formatDistance,
   formatFacePrecise,
   formatFaceRange,
   formatSpeed,
@@ -45,7 +47,12 @@ export function SpotReport({ spot, forecast }: { spot: Spot; forecast: Forecast 
 
   const summary = buildSummary(spot, now, units);
   const sky = skyLabel(now.weatherCode);
-  const comparison = buoyComparison(forecast.buoy?.waveHeightM ?? null, now.waveHeightM, units);
+  const comparison = buoyComparison(
+    forecast.buoy?.waveHeightM ?? null,
+    now.waveSource === "mop" ? now.mopHsM : now.waveHeightM,
+    units,
+    now.waveSource === "mop" ? "the CDIP nearshore height" : "the model",
+  );
   const extremes = forecast.tideExtremes.filter((extreme) => extreme.time.slice(0, 10) === day.date);
 
   return (
@@ -77,7 +84,7 @@ export function SpotReport({ spot, forecast }: { spot: Spot; forecast: Forecast 
             <Stat
               label="Wind"
               value={formatSpeed(now.windSpeedMs, units)}
-              detail={windLabel(now.windType)}
+              detail={`${windLabel(now.windType)} · ${windSourceLabel(now.windSource)}`}
             />
             <Stat
               label="Tide"
@@ -88,6 +95,23 @@ export function SpotReport({ spot, forecast }: { spot: Spot; forecast: Forecast 
           <div className="mt-5">
             <ConditionCompass spot={spot} hour={now} />
           </div>
+          {now.waveSource === "mop" ? (
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+              CDIP MOP {now.mopId}
+              {now.mopKm != null ? `, ${formatDistance(now.mopKm, units)} away` : ""}, waveFlagPrimary {now.mopFlag ?? 1}.
+              Unaltered significant height {formatSwellHeight(now.mopHsM, units)} at {Math.round(now.mopTpS ?? now.swellPeriodS)}s from the{" "}
+              {compassPoint(now.mopDp ?? now.swellDir)}. Face height is Lineup&apos;s conversion.{" "}
+              <a className="text-sea underline-offset-4 hover:underline" href="https://cdip.ucsd.edu/">
+                Data from CDIP
+              </a>
+              .
+            </p>
+          ) : now.waveSource === "shadow" ? (
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+              CDIP MOP {now.mopId ?? "for this break"} was {now.waveFallback === "flagged" ? "flagged" : "missing"} for this hour, so this size is the channel-shadow estimate.
+            </p>
+          ) : null}
+          {forecast.windNote ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{forecast.windNote}</p> : null}
           <p className="mt-4 text-sm text-muted-foreground">
             About {formatFacePrecise(now.faceFt, units)} of face height.
             {sky ? ` ${sky}.` : ""}{" "}
@@ -153,7 +177,8 @@ export function SpotReport({ spot, forecast }: { spot: Spot; forecast: Forecast 
           {forecast.buoy ? (
             <div className="mt-3 space-y-2 text-sm leading-6">
               <p>
-                {forecast.buoy.name} ({forecast.buoy.id}), observed{" "}
+                {forecast.buoy.name} ({forecast.buoy.id})
+                {forecast.buoy.distanceKm != null ? `, ${formatDistance(forecast.buoy.distanceKm, units)} away` : ""}, observed{" "}
                 {formatZonedTime(forecast.buoy.observedAt, spot.timezone)}, {Math.max(0, Math.round(forecast.buoy.ageMinutes))} min ago.
               </p>
               <p>
@@ -230,8 +255,17 @@ export function SpotReport({ spot, forecast }: { spot: Spot; forecast: Forecast 
           windowEnd={day.window?.end ?? null}
         />
       </div>
+      <div className="lg:col-span-5">
+        <SessionLog spot={spot} hours={forecast.hours} />
+      </div>
     </div>
   );
+}
+
+function windSourceLabel(source: "ksba" | "nws" | "open-meteo"): string {
+  if (source === "ksba") return "KSBA airport";
+  if (source === "nws") return "NWS grid";
+  return "Open-Meteo";
 }
 
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {

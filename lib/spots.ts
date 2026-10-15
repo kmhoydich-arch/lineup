@@ -62,10 +62,6 @@ const tide = {
   ventura: { id: "9411270", name: "Ventura" },
 } satisfies Record<string, TideLink>;
 
-const channelBuoy = { id: "46054", name: "West Santa Barbara" };
-const channelBuoyNote =
-  "East Santa Barbara buoy 46053 is the closest wave buoy, about 12 miles south of Campus Point, but its wave height has been missing since October 6, 2026. This reading is West Santa Barbara 46054, off Point Conception, the nearest buoy still reporting waves. It sits outside the island shadow, so it is larger than the surf on the beach.";
-
 export const COASTS: Coast[] = [
   "Santa Barbara / Isla Vista",
   "California",
@@ -86,8 +82,6 @@ export const SPOTS: Spot[] = [
     facing: 180,
     breakType: "beach",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.5, south: 0.84 },
     blurb:
@@ -104,8 +98,6 @@ export const SPOTS: Spot[] = [
     facing: 200,
     breakType: "point",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.72, south: 0.7 },
     blurb:
@@ -122,8 +114,6 @@ export const SPOTS: Spot[] = [
     facing: 175,
     breakType: "reef",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.42, south: 0.82 },
     blurb:
@@ -140,8 +130,6 @@ export const SPOTS: Spot[] = [
     facing: 195,
     breakType: "point",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.58, south: 0.68 },
     blurb:
@@ -158,8 +146,6 @@ export const SPOTS: Spot[] = [
     facing: 160,
     breakType: "beach",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.22, south: 0.4 },
     blurb:
@@ -176,8 +162,6 @@ export const SPOTS: Spot[] = [
     facing: 185,
     breakType: "beach",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.64, south: 0.7 },
     blurb:
@@ -194,8 +178,6 @@ export const SPOTS: Spot[] = [
     facing: 200,
     breakType: "point",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.88, south: 0.55 },
     blurb:
@@ -212,8 +194,6 @@ export const SPOTS: Spot[] = [
     facing: 175,
     breakType: "beach",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.8, south: 0.62 },
     blurb:
@@ -230,8 +210,6 @@ export const SPOTS: Spot[] = [
     facing: 185,
     breakType: "point",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.46, south: 0.86 },
     blurb:
@@ -248,8 +226,6 @@ export const SPOTS: Spot[] = [
     facing: 160,
     breakType: "reef",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.48, south: 0.96 },
     blurb:
@@ -266,8 +242,6 @@ export const SPOTS: Spot[] = [
     facing: 190,
     breakType: "beach",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.55, south: 0.7 },
     blurb:
@@ -284,8 +258,6 @@ export const SPOTS: Spot[] = [
     facing: 210,
     breakType: "point",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.santaBarbara,
     channel: { westWrap: 0.98, south: 0.58 },
     blurb:
@@ -302,8 +274,6 @@ export const SPOTS: Spot[] = [
     facing: 215,
     breakType: "point",
     timezone: "America/Los_Angeles",
-    buoy: channelBuoy,
-    buoyNote: channelBuoyNote,
     tide: tide.ventura,
     channel: { westWrap: 0.82, south: 0.52 },
     blurb:

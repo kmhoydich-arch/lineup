@@ -16,17 +16,20 @@ export function HourlyTable({
   windowStart: string | null;
   windowEnd: string | null;
 }) {
+  const showSource = hours.some((hour) => hour.waveSource !== "offshore");
   return (
     <div className="max-w-full min-w-0 overflow-x-auto rounded-2xl ring-1 ring-foreground/10">
       <table className="w-full min-w-[720px] border-collapse text-left text-sm">
         <caption className="sr-only">Hourly surf, swell, wind, tide, and score</caption>
         <thead className="bg-secondary/70 text-xs tracking-wide text-muted-foreground uppercase">
           <tr>
-            {["Time", "Face", "Swell", "Period", "Dir", "Wind", "Type", "Tide", "Score"].map((label) => (
-              <th key={label} scope="col" className="px-3 py-2 font-medium">
-                {label}
-              </th>
-            ))}
+            {["Time", "Face", "Swell", "Period", "Dir", ...(showSource ? ["Source"] : []), "Wind", "Type", "Tide", "Score"].map(
+              (label) => (
+                <th key={label} scope="col" className="px-3 py-2 font-medium">
+                  {label}
+                </th>
+              ),
+            )}
           </tr>
         </thead>
         <tbody>
@@ -45,6 +48,15 @@ export function HourlyTable({
                 <td className="px-3 py-2 tabular-nums">{formatSwellHeight(hour.swellHeightM, units)}</td>
                 <td className="px-3 py-2 tabular-nums">{Math.round(hour.swellPeriodS)}s</td>
                 <td className="px-3 py-2">{compassPoint(hour.swellDir)}</td>
+                {showSource ? (
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {hour.waveSource === "mop"
+                      ? "MOP"
+                      : hour.waveFallback === "flagged"
+                        ? "Shadow, flagged"
+                        : "Shadow"}
+                  </td>
+                ) : null}
                 <td className="px-3 py-2 tabular-nums whitespace-nowrap">
                   {formatSpeed(hour.windSpeedMs, units)} {compassPoint(hour.windDir)}
                 </td>

@@ -26,7 +26,7 @@ To check live data for a handful of breaks:
 npx tsx scripts/smoke-forecast.ts
 ```
 
-Favorites and the ft/m switch are stored in the browser. Nothing is sent to an account, because there isn't one.
+Favorites, the ft/m switch, and the session log are stored in the browser. Nothing is sent to an account, because there isn't one. The session log records time, spot, a body-relative height (knee, waist, chest, head, or overhead), how the wind felt, and whether the paddle was worth it. Export it as CSV from any break page. Model columns fill in for that break when the loaded forecast covers the same hour.
 
 ## What a report shows
 
@@ -35,7 +35,8 @@ Favorites and the ft/m switch are stored in the browser. Nothing is sent to an a
 - **Compass.** The ocean is drawn at the top, the way it looks when you face the water, with swell and wind arrows.
 - **Next 8 days.** Each day has a size, a rating, and the best three-hour stretch in daylight.
 - **Charts and a table.** Face height, swell breakdown, wind (colored by offshore or onshore), and tide, plus every hour in a table.
-- **Buoy.** A fresh NOAA observation when one is near the break, compared with the model and labeled as offshore wave height, not face height.
+- **Buoy.** The nearest NOAA or CDIP station that is actually reporting wave height, compared with the model and labeled as offshore wave height, not face height. Channel breaks pick that station on each fetch instead of keeping a backup id.
+- **Session log.** A private note of what you surfed, shown next to the model hour, with a CSV export.
 
 The rules are written out at `/how-it-works`, and the page computes a worked example with the same function the forecast uses.
 
@@ -64,17 +65,21 @@ Epic is 82+, Good is 64+, Fair is 44+, and anything lower is Poor. Full tables a
 
 Beach facing is the compass direction the beach looks toward open water. These are estimates, not a survey of every peak.
 
-Breaks from Refugio to C Street also multiply that face by a channel transmission. West and northwest swell is shadowed by the Channel Islands and has to wrap around Point Conception, so a longer period counts for more, and spots farther east keep less of it. South swell runs up the channel and is not shadowed the same way. The home view defaults to that coast. The full formula is on `/how-it-works`.
+Breaks from Sands to C Street take nearshore height from the CDIP MOP alongshore model when `waveFlagPrimary` is 1. Face height is still Lineup's conversion of that significant height. The period factor and the beach exposure stay. The channel transmission does not, because MOP is already inside the islands. If the flag is bad or the file is missing, that hour multiplies the offshore swell by a channel transmission and the page says it fell back. West and northwest swell is shadowed by the Channel Islands and has to wrap around Point Conception, so a longer period counts for more, and spots farther east keep less of it. South swell runs up the channel and is not shadowed the same way. The home view defaults to that coast. The full formula is on `/how-it-works`.
+
+Isla Vista and Goleta wind (Sands through Haskell's) uses the KSBA airport observation for the current hour and the NWS Los Angeles grid for the forecast, and falls back to Open-Meteo per hour. The other channel breaks stay on Open-Meteo wind.
 
 ## Data sources
 
-All of these are free and keyless. They were called successfully on October 13, 2026.
+All of these are free and keyless. Open-Meteo, NDBC, and the tides were called successfully on October 13, 2026. CDIP MOP, api.weather.gov, and the live buoy search were called again on October 15, 2026.
 
 | Source | Used for | Notes |
 | --- | --- | --- |
-| [Open-Meteo Marine](https://open-meteo.com/en/docs/marine-weather-api) | Swell height, period, direction, secondary swell, wind waves, sea temperature | 8-day hourly. The request is nudged offshore along the beach facing so the grid cell is over water. |
-| [Open-Meteo Forecast](https://open-meteo.com/en/docs) | Wind, gusts, air temperature, weather, sunrise, sunset | Wind is requested in m/s. |
-| [NOAA NDBC](https://www.ndbc.noaa.gov/) realtime2 files | Live buoy wave height, period, direction, water temperature | `https://www.ndbc.noaa.gov/data/realtime2/<id>.txt`. Readings older than 6 hours are not shown as live. Channel breaks use West Santa Barbara 46054. East Santa Barbara 46053 is closer to Isla Vista, but its wave height has been missing since October 6, 2026. |
+| [CDIP MOP](https://cdip.ucsd.edu/) alongshore NetCDF | Nearshore significant height, period, and direction for the Santa Barbara Channel breaks | THREDDS nowcast and forecast. Used only when `waveFlagPrimary` is 1. Raw values are not altered. Face height is labeled as Lineup's. [Data use terms](https://cdip.ucsd.edu/m/documents/data_access.html) allow public web use with a link to the CDIP homepage. |
+| [Open-Meteo Marine](https://open-meteo.com/en/docs/marine-weather-api) | Offshore swell, wind waves, sea temperature, and the channel fallback | 8-day hourly. The request is nudged offshore along the beach facing so the grid cell is over water. |
+| [Open-Meteo Forecast](https://open-meteo.com/en/docs) | Wind outside Isla Vista / Goleta, plus air temperature, weather, sunrise, sunset | Wind is requested in m/s. Also the fallback when KSBA or the NWS grid is missing. |
+| [api.weather.gov](https://api.weather.gov/) | Current wind at KSBA and the LOX gridded forecast for Isla Vista / Goleta | User-Agent is `LineupSurfForecast/1.0`. KSBA on October 15 was calm at 07:15 UTC. Campus Point's grid cell was LOX 100,71. |
+| [NOAA NDBC](https://www.ndbc.noaa.gov/) realtime2 files | Live buoy wave height, period, direction, water temperature | The nearest station in `activestations.xml` that has wave height in the last 6 hours, including CDIP buoys NDBC relays. No hardcoded backup. On October 15, 46053 was still missing wave height, so a closer dead buoy is skipped. |
 | [NOAA CO-OPS](https://api.tidesandcurrents.noaa.gov/api/prod/) | Hourly tide predictions, datum MLLW | Subordinate stations are shifted from their reference station using NOAA high/low offsets. |
 
 International breaks have swell and wind only. NOAA buoys and tides do not cover them, and the page says so instead of inventing a tide.
@@ -87,4 +92,4 @@ A server process keeps a forecast for about 20 minutes, then fetches again. The 
 
 ## Limits
 
-The marine grid does not know the sandbar. The Channel Islands shadow is modeled from Point Conception to Ventura, and it is still a coast-wide estimate, not every reef. A buoy outside the channel reads larger than the beach. Tide preference is a break-type habit. A high score on a huge day is not a recommendation to paddle out.
+The marine grid does not know the sandbar. CDIP MOP is a nearshore significant height, not the face in the lineup. The Channel Islands shadow is only the fallback, from Point Conception to Ventura, and it is still a coast-wide estimate, not every reef. A buoy outside the channel reads larger than the beach. Tide preference is a break-type habit. A high score on a huge day is not a recommendation to paddle out.

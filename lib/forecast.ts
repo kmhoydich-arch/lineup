@@ -1,14 +1,20 @@
 import { io } from "next/cache";
-import { offsetByBearing } from "@/lib/geo";
+import { haversineKm, offsetByBearing } from "@/lib/geo";
+import { fetchJson } from "@/lib/http";
+import { describeMopUse, loadMopSeries, MOP_TRANSECTS, pickMopSample, type MopSample } from "@/lib/mop";
+import { loadFixedBuoyReading, loadNearestWaveBuoy } from "@/lib/ndbc";
+import { describeLocalWind, IV_GOLETA_SPOTS, loadIvWind, windAt, type IvWind } from "@/lib/nws";
 import { chooseSwell, evaluateConditions, WINDSEA_FACE_DISCOUNT } from "@/lib/rating";
 import { getSpot } from "@/lib/spots";
 import {
   addLocalHours,
   localClockMinutes,
+  formatZonedTime,
   localHourKey,
   shiftLocalClock,
   todayInZone,
   ymdCompact,
+  zonedStampToUtc,
 } from "@/lib/time";
 import type {
   BuoyObservation,
@@ -23,8 +29,6 @@ import type {
   TideStage,
   TideTrend,
 } from "@/lib/types";
-
-const UA = "LineupSurfForecast/1.0 (open surf report)";
 const TTL_MS = 20 * 60 * 1000;
 const MARINE_HOURLY = [
   "wave_height",
@@ -129,15 +133,35 @@ function retargetNow(forecast: Forecast): Forecast {
 }
 
 async function loadForecast(spot: Spot): Promise<Forecast> {
-  const marine = await loadMarine(spot);
+  const transect = spot.channel ? MOP_TRANSECTS[spot.id] : undefined;
+  const marinePromise = loadMarine(spot);
   const weatherPromise = loadWeather(spot);
   const tidePromise = spot.tide ? loadTide(spot) : Promise.resolve(null);
-  const buoyPromise = spot.buoy ? loadBuoy(spot) : Promise.resolve(null);
+  const buoyPromise = spot.channel
+    ? loadNearestWaveBuoy(spot.lat, spot.lon)
+    : spot.buoy
+      ? loadBuoy(spot)
+      : Promise.resolve({ buoy: null as BuoyObservation | null, note: defaultBuoyNote(spot) });
+  const mopPromise = transect
+    ? loadMopSeries(transect.id).then(
+        (samples) => samples,
+        () => null,
+      )
+    : Promise.resolve(null);
+  const windPromise = IV_GOLETA_SPOTS.has(spot.id)
+    ? loadIvWind(spot.lat, spot.lon).then(
+        (wind) => wind,
+        () => null,
+      )
+    : Promise.resolve(null);
 
-  const [weather, tideResult, buoyResult] = await Promise.all([
+  const marine = await marinePromise;
+  const [weather, tideResult, buoyResult, mopSeries, localWind] = await Promise.all([
     weatherPromise,
     tidePromise,
     buoyPromise,
+    mopPromise,
+    windPromise,
   ]);
 
   const weatherByTime = indexSeries(weather.hourly);
@@ -212,6 +236,15 @@ async function loadForecast(spot: Spot): Promise<Forecast> {
       windSpeedMs: windSpeed,
       windGustMs: num(weatherHour.wind_gusts_10m),
       windDir: num(weatherHour.wind_direction_10m) ?? 0,
+      windSource: "open-meteo",
+      waveSource: spot.channel ? "shadow" : "offshore",
+      waveFallback: null,
+      mopId: transect?.id ?? null,
+      mopKm: transect ? haversineKm(spot.lat, spot.lon, transect.lat, transect.lon) : null,
+      mopHsM: null,
+      mopTpS: null,
+      mopDp: null,
+      mopFlag: null,
       tempC: num(weatherHour.temperature_2m),
       precipProb: num(weatherHour.precipitation_probability),
       weatherCode: num(weatherHour.weather_code),
@@ -228,9 +261,11 @@ async function loadForecast(spot: Spot): Promise<Forecast> {
     );
   }
 
+  const waveNote = transect ? applyMop(hours, spot, transect.id, mopSeries) : null;
+  const windNote = IV_GOLETA_SPOTS.has(spot.id) ? applyLocalWind(hours, spot, localWind) : null;
   applyTide(hours, spot);
   const days = buildDays(hours, weather.daily);
-  const buoy = buoyResult?.buoy ?? null;
+  const buoy = buoyResult.buoy;
   const nowWater = hours.find((hour) => hour.waterTempC != null)?.waterTempC ?? null;
   const waterTempC = buoy?.waterTempC ?? nowWater;
   const waterTempSource = buoy?.waterTempC != null ? "buoy" : nowWater != null ? "model" : null;
@@ -244,7 +279,9 @@ async function loadForecast(spot: Spot): Promise<Forecast> {
     days,
     nowIndex: 0,
     buoy,
-    buoyNote: buoyResult?.note ?? defaultBuoyNote(spot),
+    buoyNote: buoyResult.note, 
+    waveNote,
+    windNote,
     tideExtremes: tideResult?.extremes ?? [],
     tideNote: tideResult?.note ?? defaultTideNote(spot),
     waterTempC,
@@ -283,7 +320,10 @@ function applyTide(hours: DerivedHour[], spot: Spot) {
         windDir: hour.windDir,
         tidePosition: position,
         discount: hour.faceDiscount,
-        channel: spot.channel ? { lon: spot.lon, window: spot.channel } : null,
+        channel:
+          hour.waveSource === "mop" || !spot.channel
+            ? null
+            : { lon: spot.lon, window: spot.channel },
       });
       hour.points = evaluation.points;
       hour.rawScore = evaluation.rawScore;
@@ -408,7 +448,7 @@ async function loadMarine(spot: Spot): Promise<{ hourly: Series }> {
     url.searchParams.set("forecast_days", "8");
     url.searchParams.set("timezone", spot.timezone);
     try {
-      const data = (await fetchJson(url)) as { hourly?: Series; reason?: string };
+      const data = (await fetchJson(url.toString())) as { hourly?: Series; reason?: string };
       const hourly = data.hourly;
       if (!hourly?.time?.length) {
         lastError = data.reason || lastError;
@@ -444,7 +484,7 @@ async function loadWeather(spot: Spot): Promise<{
   url.searchParams.set("temperature_unit", "celsius");
   url.searchParams.set("timezone", spot.timezone);
   try {
-    const data = (await fetchJson(url)) as {
+    const data = (await fetchJson(url.toString())) as {
       hourly?: Series;
       daily?: { time: string[]; sunrise: (string | null)[]; sunset: (string | null)[] };
       reason?: string;
@@ -520,7 +560,7 @@ async function fetchTide(
   url.searchParams.set("units", "metric");
   url.searchParams.set("format", "json");
   url.searchParams.set("application", "lineup_surf_forecast");
-  const data = (await fetchJson(url)) as {
+  const data = (await fetchJson(url.toString())) as {
     predictions?: { t: string; v: string; type?: string }[];
     error?: { message?: string };
   };
@@ -572,29 +612,108 @@ function tideAt(points: TidePoint[], mins: number): number | null {
 async function loadBuoy(spot: Spot): Promise<{ buoy: BuoyObservation | null; note: string | null }> {
   const buoy = spot.buoy;
   if (!buoy) return { buoy: null, note: defaultBuoyNote(spot) };
-  const url = `https://www.ndbc.noaa.gov/data/realtime2/${buoy.id}.txt`;
-  try {
-    const text = await fetchText(url);
-    const parsed = parseBuoy(text);
-    if (!parsed) {
-      return { buoy: null, note: `${buoy.name} (${buoy.id}) didn't include a readable observation.` };
-    }
-    if (parsed.ageMinutes > 360) {
-      return {
-        buoy: null,
-        note: joinNote(
-          `${buoy.name} (${buoy.id}) last reported ${Math.round(parsed.ageMinutes / 60)} hours ago, so it isn't treated as live.`,
-          spot.buoyNote,
-        ),
-      };
-    }
-    return {
-      buoy: { ...parsed, id: buoy.id, name: buoy.name },
-      note: spot.buoyNote ?? null,
-    };
-  } catch {
-    return { buoy: null, note: joinNote(`${buoy.name} (${buoy.id}) didn't respond.`, spot.buoyNote) };
+  const parsed = await loadFixedBuoyReading(buoy.id);
+  if (!parsed) {
+    return { buoy: null, note: joinNote(`${buoy.name} (${buoy.id}) didn't include a readable observation.`, spot.buoyNote) };
   }
+  if (parsed.waveHeightM == null || parsed.ageMinutes > 360) {
+    const why =
+      parsed.waveHeightM == null
+        ? `${buoy.name} (${buoy.id}) had no wave height in the latest report.`
+        : `${buoy.name} (${buoy.id}) last reported ${Math.round(parsed.ageMinutes / 60)} hours ago, so it isn't treated as live.`;
+    return { buoy: null, note: joinNote(why, spot.buoyNote) };
+  }
+  return {
+    buoy: { ...parsed, id: buoy.id, name: buoy.name, distanceKm: null },
+    note: spot.buoyNote ?? null,
+  };
+}
+
+function applyMop(hours: DerivedHour[], spot: Spot, transectId: string, samples: MopSample[] | null): string {
+  const km = hours[0]?.mopKm ?? 0;
+  if (!samples) {
+    for (const hour of hours) hour.waveFallback = "missing";
+    return describeMopUse({ id: transectId, km, used: 0, flagged: 0, missing: hours.length, failed: true });
+  }
+  let used = 0;
+  let flagged = 0;
+  let missing = 0;
+  for (const hour of hours) {
+    const instant = zonedStampToUtc(hour.time, spot.timezone);
+    if (!instant) {
+      hour.waveFallback = "missing";
+      missing += 1;
+      continue;
+    }
+    const pick = pickMopSample(samples, instant.getTime() / 1000);
+    if (!pick.sample) {
+      hour.waveSource = "shadow";
+      hour.waveFallback = pick.reason === "flagged" ? "flagged" : "missing";
+      hour.mopFlag = pick.flag;
+      if (pick.reason === "flagged") flagged += 1;
+      else missing += 1;
+      continue;
+    }
+    hour.waveSource = "mop";
+    hour.waveFallback = null;
+    hour.swellHeightM = pick.sample.hs;
+    hour.swellPeriodS = pick.sample.tp;
+    hour.swellDir = pick.sample.dp;
+    hour.swellSource = "primary";
+    hour.faceDiscount = 1;
+    hour.mopHsM = pick.sample.hs;
+    hour.mopTpS = pick.sample.tp;
+    hour.mopDp = pick.sample.dp;
+    hour.mopFlag = 1;
+    used += 1;
+  }
+  return describeMopUse({ id: transectId, km, used, flagged, missing, failed: false });
+}
+
+const AIRPORT_FRESH_MIN = 180;
+
+function applyLocalWind(hours: DerivedHour[], spot: Spot, wind: IvWind | null): string {
+  if (!wind || (!wind.airport && !wind.grid)) {
+    return "Santa Barbara Airport and the NWS grid didn't load, so wind is the Open-Meteo forecast.";
+  }
+  const nowKey = localHourKey(new Date(), spot.timezone);
+  const airportAgeMin = wind.airport ? (Date.now() - Date.parse(wind.airport.observedAt)) / 60000 : null;
+  const airportFresh =
+    wind.airport != null && airportAgeMin != null && airportAgeMin >= -15 && airportAgeMin <= AIRPORT_FRESH_MIN;
+  let airportUsed = false;
+  let gridHours = 0;
+  let openMeteoHours = 0;
+  for (const hour of hours) {
+    const key = hour.time.slice(0, 16);
+    if (airportFresh && wind.airport && key === nowKey) {
+      hour.windSpeedMs = wind.airport.speedMs;
+      hour.windDir = wind.airport.dir;
+      hour.windGustMs = wind.airport.gustMs;
+      hour.windSource = "ksba";
+      airportUsed = true;
+      continue;
+    }
+    const instant = zonedStampToUtc(hour.time, spot.timezone);
+    const sample = wind.grid && instant ? windAt(wind.grid, instant.getTime()) : null;
+    if (!sample) {
+      openMeteoHours += 1;
+      continue;
+    }
+    hour.windSpeedMs = sample.speedMs;
+    hour.windDir = sample.dir;
+    hour.windGustMs = sample.gustMs;
+    hour.windSource = "nws";
+    gridHours += 1;
+  }
+  return describeLocalWind({
+    airportUsed,
+    airportAt: wind.airport ? formatZonedTime(wind.airport.observedAt, spot.timezone) : null,
+    airportMissing: wind.airport == null,
+    airportStale: wind.airport != null && !airportFresh,
+    grid: wind.grid,
+    gridHours,
+    openMeteoHours,
+  });
 }
 
 function joinNote(note: string, extra?: string): string {
@@ -614,55 +733,6 @@ function defaultTideNote(spot: Spot): string {
     return "NOAA tide predictions don't cover this coast, so the tide part of the score stays neutral.";
   }
   return "No tide station is linked, so the tide part of the score stays neutral.";
-}
-
-function parseBuoy(text: string): Omit<BuoyObservation, "id" | "name"> | null {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const headerLine = lines.find((line) => line.startsWith("#YY"));
-  const dataLines = lines.filter((line) => !line.startsWith("#"));
-  if (!headerLine || !dataLines.length) return null;
-  const headers = headerLine.replace(/^#/, "").trim().split(/\s+/);
-  const parsed = dataLines
-    .map((line) => parseBuoyRow(headers, line))
-    .filter((row): row is Omit<BuoyObservation, "id" | "name"> => row != null);
-  if (!parsed.length) return null;
-  // Some stations alternate wave reports with wind-only rows. Prefer a fresh wave row.
-  const withWaves = parsed.find((row) => row.waveHeightM != null && row.ageMinutes <= 360);
-  return withWaves ?? parsed[0];
-}
-
-function parseBuoyRow(
-  headers: string[],
-  dataLine: string,
-): Omit<BuoyObservation, "id" | "name"> | null {
-  const cols = dataLine.split(/\s+/);
-  const read = (name: string) => {
-    const index = headers.indexOf(name);
-    if (index < 0 || index >= cols.length) return null;
-    if (cols[index] === "MM") return null;
-    const value = Number(cols[index]);
-    return Number.isFinite(value) ? value : null;
-  };
-  const yearRaw = read("YY");
-  const month = read("MM");
-  const day = read("DD");
-  const hour = read("hh");
-  const minute = read("mm");
-  if (yearRaw == null || month == null || day == null || hour == null || minute == null) return null;
-  const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
-  const observed = Date.UTC(year, month - 1, day, hour, minute);
-  return {
-    observedAt: new Date(observed).toISOString(),
-    ageMinutes: (Date.now() - observed) / 60000,
-    waveHeightM: read("WVHT"),
-    periodS: read("DPD"),
-    direction: read("MWD"),
-    windSpeedMs: read("WSPD"),
-    windDir: read("WDIR"),
-    gustMs: read("GST"),
-    waterTempC: read("WTMP"),
-    airTempC: read("ATMP"),
-  };
 }
 
 function indexSeries(series: Series): Map<string, Record<string, number | null>> {
@@ -688,26 +758,3 @@ function num(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-async function fetchJson(url: URL): Promise<unknown> {
-  const text = await fetchText(url.toString());
-  return JSON.parse(text) as unknown;
-}
-
-async function fetchText(url: string): Promise<string> {
-  let last: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json, text/plain, */*", "User-Agent": UA },
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.text();
-    } catch (error) {
-      last = error;
-      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 350));
-    }
-  }
-  throw last instanceof Error ? last : new Error("Request failed");
-}

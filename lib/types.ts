@@ -33,6 +33,15 @@ export type TideTrend = "rising" | "falling" | "steady";
 
 export type SwellSource = "primary" | "secondary" | "windsea" | "flat";
 
+/** Where the surf height for an hour came from. */
+export type WaveSource = "mop" | "shadow" | "offshore";
+
+/** Why a channel hour did not use CDIP MOP. */
+export type WaveFallback = "flagged" | "missing";
+
+/** Where the wind for an hour came from. */
+export type WindSource = "ksba" | "nws" | "open-meteo";
+
 export type TideLink = {
   id: string;
   name: string;
@@ -91,6 +100,18 @@ export type DerivedHour = {
   channelKind: ChannelKind | null;
   /** Share of the offshore swell height that reaches this break. 1 outside the channel. */
   channelTransmission: number | null;
+  waveSource: WaveSource;
+  /** Set when waveSource is the channel-shadow fallback. */
+  waveFallback: WaveFallback | null;
+  /** CDIP alongshore transect, when this break has one. */
+  mopId: string | null;
+  mopKm: number | null;
+  /** Unaltered CDIP significant wave height, meters. Null unless waveSource is mop. */
+  mopHsM: number | null;
+  mopTpS: number | null;
+  mopDp: number | null;
+  mopFlag: number | null;
+  windSource: WindSource;
   secondaryHeightM: number | null;
   secondaryPeriodS: number | null;
   secondaryDir: number | null;
@@ -147,6 +168,8 @@ export type BuoyObservation = {
   gustMs: number | null;
   waterTempC: number | null;
   airTempC: number | null;
+  /** Kilometers from the break. Null for a buoy that was chosen ahead of time. */
+  distanceKm: number | null;
 };
 
 export type Forecast = {
@@ -159,6 +182,10 @@ export type Forecast = {
   nowIndex: number;
   buoy: BuoyObservation | null;
   buoyNote: string | null;
+  /** How nearshore wave height was chosen for a channel break. */
+  waveNote: string | null;
+  /** How wind was chosen for an Isla Vista / Goleta break. */
+  windNote: string | null;
   tideExtremes: TideExtreme[];
   tideNote: string | null;
   waterTempC: number | null;

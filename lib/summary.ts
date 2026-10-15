@@ -74,6 +74,12 @@ function windSentence(hour: DerivedHour, units: Units): string {
   }
 }
 
+function windSourceSuffix(hour: DerivedHour): string {
+  if (hour.windSource === "ksba") return " This reading is the Santa Barbara Airport observation.";
+  if (hour.windSource === "nws") return " This hour uses the NWS grid forecast.";
+  return "";
+}
+
 function tideSentence(hour: DerivedHour, units: Units, hasTideStation: boolean): string {
   if (hour.tideM == null || hour.tideStage == null || hour.tideTrend == null) {
     return hasTideStation
@@ -104,7 +110,7 @@ function capitalize(value: string): string {
 export function buildSummary(spot: Spot, hour: DerivedHour, units: Units): string {
   const dir = compassWord(hour.swellDir);
   const period = Math.round(hour.swellPeriodS);
-  const wind = windSentence(hour, units);
+  const wind = `${windSentence(hour, units)}${windSourceSuffix(hour)}`;
   const tide = tideSentence(hour, units, Boolean(spot.tide));
   const sky = skySentence(hour.weatherCode, hour.precipProb);
 
@@ -127,6 +133,8 @@ export function buildSummary(spot: Spot, hour: DerivedHour, units: Units): strin
     lead = `It's mostly local windsea, ${sizeWords(hour.faceFt)}, around ${period} seconds out of the ${dir}. That kind of chop rarely lines up.`;
   } else if (hour.swellSource === "secondary") {
     lead = `${capitalize(sizeWords(hour.faceFt))} secondary swell from the ${dir} at ${period} seconds is the one that arrives best on this beach. The other swell is aimed worse, so the rating uses this one.`;
+  } else if (hour.waveSource === "mop") {
+    lead = `${capitalize(sizeWords(hour.faceFt))} nearshore swell from the ${dir} at ${period} seconds.`;
   } else if (shadowed) {
     lead = `${capitalize(sizeWords(hour.faceFt))} ${dir} swell at ${period} seconds, measured offshore.`;
   } else if (hour.swellAngle <= 20) {
@@ -140,18 +148,29 @@ export function buildSummary(spot: Spot, hour: DerivedHour, units: Units): strin
 }
 
 function channelSentence(hour: DerivedHour): string | null {
-  if (!hour.channelKind || hour.channelTransmission == null) return null;
+  if (hour.waveSource === "mop") {
+    return "This hour uses the CDIP nearshore model at the break. The face height is Lineup's conversion of that significant wave height, not a CDIP surf measurement.";
+  }
+  const fallback =
+    hour.waveSource === "shadow"
+      ? hour.waveFallback === "flagged"
+        ? "CDIP MOP flagged this hour, so the size falls back to the channel-shadow estimate."
+        : "CDIP MOP had no sample for this hour, so the size falls back to the channel-shadow estimate."
+      : null;
+  if (!hour.channelKind || hour.channelTransmission == null) return fallback;
   const pct = Math.max(1, Math.round(hour.channelTransmission * 100));
+  let shadow: string;
   if (hour.channelKind === "south") {
-    return "South swell runs up the Santa Barbara Channel between the islands and the mainland, so this direction is not shadowed the way a west swell is.";
+    shadow =
+      "South swell runs up the Santa Barbara Channel between the islands and the mainland, so this direction is not shadowed the way a west swell is.";
+  } else if (hour.channelKind === "wrap") {
+    shadow = `West-northwest swell has to wrap around Point Conception. About ${pct}% of the offshore height is counted, and a longer period bends it toward the beach.`;
+  } else if (hour.channelKind === "mixed") {
+    shadow = `Southwest swell only partly clears the Channel Islands. About ${pct}% of the offshore height is counted.`;
+  } else {
+    shadow = `This direction is blocked by the Channel Islands and the bend at Point Conception. About ${pct}% of the offshore height is counted.`;
   }
-  if (hour.channelKind === "wrap") {
-    return `West-northwest swell has to wrap around Point Conception. About ${pct}% of the offshore height is counted, and a longer period bends it toward the beach.`;
-  }
-  if (hour.channelKind === "mixed") {
-    return `Southwest swell only partly clears the Channel Islands. About ${pct}% of the offshore height is counted.`;
-  }
-  return `This direction is blocked by the Channel Islands and the bend at Point Conception. About ${pct}% of the offshore height is counted.`;
+  return fallback ? `${fallback} ${shadow}` : shadow;
 }
 
 export function windowBlurb(hour: DerivedHour): string {
@@ -168,6 +187,7 @@ export function buoyComparison(
   buoyHeightM: number | null,
   modelHeightM: number | null,
   units: Units,
+  modelName = "the model",
 ): string | null {
   if (buoyHeightM == null || modelHeightM == null) return null;
   const diffM = buoyHeightM - modelHeightM;
@@ -176,10 +196,10 @@ export function buoyComparison(
       ? `${Math.abs(diffM).toFixed(1)} m`
       : `${Math.abs(diffM * 3.28084).toFixed(1)} ft`;
   if (Math.abs(diffM) < 0.35) {
-    return "The buoy's wave height is within about a foot of the model. Buoy height is offshore water, not the face height on the beach.";
+    return `The buoy's wave height is within about a foot of ${modelName}. Buoy height is offshore water, not the face height on the beach.`;
   }
   if (diffM > 0) {
-    return `The buoy is reading about ${diff} higher than the model. The surf may be bigger than the chart. Buoy height is offshore water, not face height.`;
+    return `The buoy is reading about ${diff} higher than ${modelName}. Buoy height is offshore water, not face height.`;
   }
-  return `The buoy is reading about ${diff} lower than the model. The surf may be smaller than the chart. Buoy height is offshore water, not face height.`;
+  return `The buoy is reading about ${diff} lower than ${modelName}. Buoy height is offshore water, not face height.`;
 }

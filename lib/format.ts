@@ -25,6 +25,12 @@ export function formatSwellHeight(meters: number | null, units: Units): string {
   return `${(meters * 3.28084).toFixed(1)} ft`;
 }
 
+export function formatDistance(km: number, units: Units): string {
+  if (units === "metric") return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+  const miles = km * 0.621371;
+  return miles < 10 ? `${miles.toFixed(1)} mi` : `${Math.round(miles)} mi`;
+}
+
 export function formatSpeed(metersPerSecond: number, units: Units): string {
   if (units === "metric") return `${Math.round(metersPerSecond * 3.6)} km/h`;
   return `${Math.round(metersPerSecond * 2.236936)} mph`;

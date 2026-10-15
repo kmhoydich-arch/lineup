@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { channelArrival, CHANNEL_WRAP_PEAK } from "@/lib/channel";
+import { haversineKm } from "@/lib/geo";
+import { MOP_TRANSECTS } from "@/lib/mop";
 import { evaluateConditions } from "@/lib/rating";
+import { SPOTS } from "@/lib/spots";
 import {
   DIRECTION_POINTS,
   EXPOSURE_FACTORS,
@@ -67,6 +70,11 @@ const campusShort = evaluateConditions({
   channel: campusChannel,
 });
 const wrapArrival = channelArrival(campusChannel.lon, 200, 290, 16, campusChannel.window);
+const mopRows = SPOTS.filter((spot) => spot.channel && MOP_TRANSECTS[spot.id]).map((spot) => {
+  const transect = MOP_TRANSECTS[spot.id];
+  const km = haversineKm(spot.lat, spot.lon, transect.lat, transect.lon);
+  return [spot.name, transect.id, `${km.toFixed(2)} km`];
+});
 
 export default function HowItWorksPage() {
   return (
@@ -187,9 +195,30 @@ export default function HowItWorksPage() {
         <p>Change any input and the same function runs on every hour of every break.</p>
       </Section>
 
+      <Section title="Nearshore model for the channel">
+        <p>
+          For the Santa Barbara Channel breaks, surf height starts from the CDIP MOP v1.1 alongshore nowcast and forecast, served as NetCDF on the CDIP THREDDS server. Each break uses the prediction site nearest its coordinates. A sample is used only when waveFlagPrimary is 1. Nowcast hours win when they are within 90 minutes. The forecast is every three hours, so the hours between two good forecast points are interpolated. Significant height, peak period, and peak direction are shown as CDIP published them.
+        </p>
+        <p>
+          Face height is still Lineup&apos;s conversion: meters times 3.28084, times the period factor, times exposure to the beach facing. The channel-shadow multiplier is not applied on top of a nearshore height. If the flag is anything other than 1, or the file is missing, that hour falls back to the shadow estimate and the page says so.
+        </p>
+        <Table headers={["Break", "MOP transect", "Distance"]} rows={mopRows} />
+        <p>
+          Checked on October 15, 2026. Campus Point resolved to transect B0382, and the forecast and nowcast files returned waveFlagPrimary 1. CDIP&apos;s data-use terms allow public use of the products when they are not altered, and a web display has to link to the CDIP homepage. Lineup does that, and it does not relabel the face height as a CDIP measurement.{" "}
+          <a className="text-sea underline-offset-4 hover:underline" href="https://cdip.ucsd.edu/">
+            Data from CDIP, Scripps Institution of Oceanography
+          </a>
+          . DOI{" "}
+          <a className="text-sea underline-offset-4 hover:underline" href="https://doi.org/10.18437/C7WC72">
+            10.18437/C7WC72
+          </a>
+          .
+        </p>
+      </Section>
+
       <Section title="The Santa Barbara Channel">
         <p>
-          From Point Conception to Ventura the coast faces south, and the Channel Islands sit upwind of a west or northwest swell. A straight west swell does not hit Isla Vista the way it hits a west-facing beach in San Francisco. Two kinds of swell do the work here.
+          The shadow math below is the fallback, used when MOP is flagged or missing, and it is the explanation of why a west swell offshore is not the wave on the beach. From Point Conception to Ventura the coast faces south, and the Channel Islands sit upwind of a west or northwest swell. A straight west swell does not hit Isla Vista the way it hits a west-facing beach in San Francisco. Two kinds of swell do the work here.
         </p>
         <ul className="list-disc space-y-2 pl-5">
           <li>South swell, roughly 145° to 205°, runs up the channel between the islands and the mainland. Spots that face south, especially Hammond&apos;s, Sands, Depressions, and Leadbetter, keep most of that height.</li>
@@ -247,7 +276,9 @@ export default function HowItWorksPage() {
       </Section>
 
       <Section title="Data sources">
-        <p>No API keys. Each source was called successfully while this app was built, on October 13, 2026.</p>
+        <p>
+          No API keys. Open-Meteo, NDBC, and the tide stations were called successfully on October 13, 2026. CDIP MOP, the NWS grid, KSBA, and the live buoy search were called again on October 15, 2026.
+        </p>
         <ul className="space-y-3">
           <li>
             <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://open-meteo.com/en/docs/marine-weather-api">
@@ -265,7 +296,7 @@ export default function HowItWorksPage() {
             <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://www.ndbc.noaa.gov/">
               NOAA NDBC realtime buoy files
             </a>
-            . <code>https://www.ndbc.noaa.gov/data/realtime2/&lt;station&gt;.txt</code>. On that check, station 46237 (San Francisco Bar) reported about 1.5 m at 15 seconds, and 51201 (Waimea Bay) was reporting as well. For the Santa Barbara Channel, East Santa Barbara buoy 46053 is the closest, about 12 miles south of Campus Point, but its wave height has been missing since October 6, 2026. West Santa Barbara 46054, off Point Conception, was reporting about 1.8 m at 16 seconds from 264 degrees that same evening, so the channel breaks use 46054. Observations older than 6 hours are not shown as live. There is no NDBC coverage for the international breaks.
+            . <code>https://www.ndbc.noaa.gov/data/realtime2/&lt;station&gt;.txt</code>. On October 13, station 46237 (San Francisco Bar) reported about 1.5 m at 15 seconds, and 51201 (Waimea Bay) was reporting as well. Channel breaks do not keep a backup buoy. Each request loads the NDBC active-station list, which includes CDIP buoys NDBC relays, and uses the nearest station that has a wave height in the last 6 hours. On October 15, East Santa Barbara 46053 was the closest buoy to Campus Point and its newest wave height was still October 6, so the page moved on to the next station that was actually reporting. The buoy card names the station and the distance. Observations older than 6 hours are not shown as live. There is no NDBC coverage for the international breaks.
           </li>
           <li>
             <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://api.tidesandcurrents.noaa.gov/api/prod/">
@@ -273,12 +304,28 @@ export default function HowItWorksPage() {
             </a>
             . Hourly tide predictions, datum MLLW, metric, local time. Station 9414290 (San Francisco) returned a full prediction series. Santa Barbara 9411340 and Ventura 9411270 both returned hourly predictions on October 13, 2026, and those are the gauges for the channel breaks. Some nearby harbors are subordinate stations. For those, Lineup shifts the reference station by the average of the NOAA high and low time offsets and scales height by the average ratio. The station name on the page says when that happens.
           </li>
+          <li>
+            <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://cdip.ucsd.edu/">
+              CDIP MOP
+            </a>
+            , Scripps Institution of Oceanography. Alongshore nowcast and forecast NetCDF on THREDDS, for the channel breaks only. waveFlagPrimary must be 1. The files for the transects in the table above answered on October 15, 2026.
+          </li>
+          <li>
+            <a className="font-medium text-sea underline-offset-4 hover:underline" href="https://api.weather.gov/">
+              api.weather.gov
+            </a>
+            . For Sands, Campus Point, Depressions, Coal Oil Point, Goleta Beach, and Haskell&apos;s, the current hour uses the latest KSBA observation and the other hours use the NWS Los Angeles (LOX) gridded forecast at that break&apos;s grid cell. Requests send a User-Agent. On October 15, 2026, KSBA returned a wind observation and Campus Point resolved to grid LOX 100,71. If either source fails, that hour stays on Open-Meteo. El Capitan through C Street stay on Open-Meteo wind.
+          </li>
         </ul>
+        <p>
+          The session log is not a data source. Time, spot, body-relative height, how the wind felt, and whether it was worth it are stored in this browser and can be exported as CSV, with the model numbers for that hour filled in when the forecast on the page covers it.
+        </p>
       </Section>
 
       <Section title="What this will get wrong">
         <ul className="list-disc space-y-2 pl-5">
-          <li>The Channel Islands shadow is modeled only from Point Conception to Ventura. Other islands, points, and sandbars are not. A west swell that looks square on the compass can still be blocked somewhere else.</li>
+          <li>CDIP MOP is a nearshore significant height at about 10 meters depth, not a measured surf report. Lineup still turns that height into a face estimate with period and exposure.</li>
+          <li>The Channel Islands shadow is the fallback, and it is modeled only from Point Conception to Ventura. Other islands, points, and sandbars are not. A west swell that looks square on the compass can still be blocked somewhere else.</li>
           <li>The marine grid is coarse. The offshore nudge helps, and it is still a model cell, not the lineup.</li>
           <li>Buoys measure offshore waves. They are shown beside the forecast, not swapped in as the surf height.</li>
           <li>Tide preference is a break-type habit. Your spot may want the opposite.</li>
